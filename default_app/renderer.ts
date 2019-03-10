@@ -1,52 +1,46 @@
-import { remote, shell } from 'electron'
-import * as fs from 'fs'
-import * as path from 'path'
-import * as URL from 'url'
+import { ipcRenderer } from 'electron'
 
 function initialize () {
-  // Find the shortest path to the electron binary
-  const absoluteElectronPath = remote.process.execPath
-  const relativeElectronPath = path.relative(process.cwd(), absoluteElectronPath)
-  const electronPath = absoluteElectronPath.length < relativeElectronPath.length
-    ? absoluteElectronPath
-    : relativeElectronPath
+  const electronPath = ipcRenderer.sendSync('get-electron-path')
 
-  for (const link of document.querySelectorAll<HTMLLinkElement>('a[href]')) {
-    // safely add `?utm_source=default_app
-    const parsedUrl = URL.parse(link.getAttribute('href')!, true)
-    parsedUrl.query = { ...parsedUrl.query, utm_source: 'default_app' }
-    const url = URL.format(parsedUrl)
-
+  for (const link of document.querySelectorAll<HTMLAnchorElement>('a[href]')) {
     const openLinkExternally = (e: Event) => {
       e.preventDefault()
-      shell.openExternalSync(url)
+      ipcRenderer.send('open-link-externally', link.getAttribute('href'))
     }
 
     link.addEventListener('click', openLinkExternally)
     link.addEventListener('auxclick', openLinkExternally)
   }
 
-  document.querySelector<HTMLAnchorElement>('.electron-version')!.innerText = `Electron v${process.versions.electron}`
-  document.querySelector<HTMLAnchorElement>('.chrome-version')!.innerText = `Chromium v${process.versions.chrome}`
-  document.querySelector<HTMLAnchorElement>('.node-version')!.innerText = `Node v${process.versions.node}`
-  document.querySelector<HTMLAnchorElement>('.v8-version')!.innerText = `v8 v${process.versions.v8}`
-  document.querySelector<HTMLAnchorElement>('.command-example')!.innerText = `${electronPath} path-to-app`
-
-  function getOcticonSvg (name: string) {
-    const octiconPath = path.resolve(__dirname, 'octicon', `${name}.svg`)
-    if (fs.existsSync(octiconPath)) {
-      const content = fs.readFileSync(octiconPath, 'utf8')
-      const div = document.createElement('div')
-      div.innerHTML = content
-      return div
+  function replaceText (selector: string, text: string) {
+    const element = document.querySelector<HTMLElement>(selector)
+    if (element) {
+      element.innerText = text
     }
-    return null
   }
 
-  function loadSVG (element: HTMLSpanElement) {
+  replaceText('.electron-version', `Electron v${process.versions.electron}`)
+  replaceText('.chrome-version', `Chromium v${process.versions.chrome}`)
+  replaceText('.node-version', `Node v${process.versions.node}`)
+  replaceText('.v8-version', `v8 v${process.versions.v8}`)
+  replaceText('.command-example', `${electronPath} path-to-app`)
+
+  async function getOcticonSvg (name: string) {
+    try {
+      const response = await fetch(`octicon/${name}.svg`)
+      const div = document.createElement('div')
+      div.innerHTML = await response.text()
+      return div
+    } catch {
+      return null
+    }
+  }
+
+  async function loadSVG (element: HTMLSpanElement) {
     for (const cssClass of element.classList) {
       if (cssClass.startsWith('octicon-')) {
-        const icon = getOcticonSvg(cssClass.substr(8))
+        const icon = await getOcticonSvg(cssClass.substr(8))
         if (icon) {
           for (const elemClass of element.classList) {
             icon.classList.add(elemClass)
